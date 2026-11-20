@@ -372,6 +372,9 @@ function DashboardSection() {
         </p>
       </div>
 
+      {/* Sincronização OpenBot ↔ Media-Kit: dados reais de prospecção/WhatsApp */}
+      <EcossistemaCard />
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {KPIS.map((k) => (
           <Card key={k.rotulo} className="p-4">
@@ -627,5 +630,180 @@ function ConfigSection({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/* ---------- Sincronização OpenBot ↔ Media-Kit (clodoaldo.vercel.app) ---------- */
+
+interface EcossistemaOverview {
+  ok?: boolean;
+  full?: boolean;
+  gerado_em?: string;
+  fonte?: string;
+  erro?: string;
+  prospeccao?: {
+    hoje_primeiros_contatos: number;
+    meta_diaria: number;
+    hoje_followups: number;
+    pendentes: number;
+    respondentes_7d: number;
+  };
+  kanban?: Record<string, number>;
+  agentes?: Array<{ nome: string; status: string; detalhe: string }>;
+  respondentes_recentes?: Array<{
+    nome: string;
+    nicho: string;
+    respondeu_em: string | null;
+  }>;
+}
+
+function EcossistemaCard() {
+  const [dados, setDados] = useState<EcossistemaOverview | null>(null);
+  const [estado, setEstado] = useState<"loading" | "ok" | "erro">("loading");
+
+  const carregar = useCallback(async () => {
+    setEstado("loading");
+    try {
+      const res = await fetch("/api/ecossistema", { cache: "no-store" });
+      if (!res.ok) throw new Error("indisponível");
+      const d = (await res.json()) as EcossistemaOverview;
+      setDados(d);
+      setEstado("ok");
+    } catch {
+      setEstado("erro");
+    }
+  }, []);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const p = dados?.prospeccao;
+  const kanban = dados?.kanban ?? {};
+  const meta = p?.meta_diaria ?? 18;
+
+  const miniKpis = [
+    { rotulo: "Prospecção hoje", valor: p ? `${p.hoje_primeiros_contatos}/${meta}` : "—", detalhe: "1ºs contatos enviados" },
+    { rotulo: "Follow-ups hoje", valor: p ? String(p.hoje_followups) : "—", detalhe: "retomadas 48h" },
+    { rotulo: "Respondentes (7d)", valor: p ? String(p.respondentes_7d) : "—", detalhe: "leads que responderam" },
+    { rotulo: "Fila pendente", valor: p ? String(p.pendentes) : "—", detalhe: "aguardando envio" },
+  ];
+
+  return (
+    <Card className="border-emerald-500/40">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Bot className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+          Ecossistema ao vivo
+          <Badge variant="outline" className="text-[10px]">
+            sincronizado
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-8 px-2 text-xs"
+            onClick={carregar}
+            title="Atualizar agora"
+          >
+            {estado === "loading" ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              "Atualizar"
+            )}
+          </Button>
+        </CardTitle>
+        <CardDescription>
+          Prospecção, WhatsApp e kanban em tempo real do clodoaldo.vercel.app
+          {dados?.gerado_em
+            ? ` · ${new Date(dados.gerado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+            : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {estado === "erro" && (
+          <p className="text-sm text-destructive" role="alert">
+            Não consegui falar com o Media-Kit agora. O resto do painel segue
+            normal — tente atualizar em alguns segundos.
+          </p>
+        )}
+        {estado === "ok" && p && (
+          <>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {miniKpis.map((k) => (
+                <div key={k.rotulo} className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{k.rotulo}</p>
+                  <p className="text-2xl font-bold text-emerald-500">{k.valor}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{k.detalhe}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(kanban).map(([st, n]) => (
+                <Badge key={st} variant="secondary" className="text-xs">
+                  kanban {st}: {n}
+                </Badge>
+              ))}
+            </div>
+
+            {dados?.agentes && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Agentes rodando
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {dados.agentes.map((a) => (
+                    <div
+                      key={a.nome}
+                      className="flex items-start gap-2 rounded-lg border p-2.5"
+                    >
+                      {a.status === "no-ar" ? (
+                        <CheckCircle2
+                          className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Circle
+                          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <div>
+                        <p className="text-sm font-medium leading-tight">{a.nome}</p>
+                        <p className="text-xs text-muted-foreground">{a.detalhe}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {dados?.respondentes_recentes &&
+              dados.respondentes_recentes.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Responderam nos últimos 7 dias
+                  </p>
+                  {dados.respondentes_recentes.slice(0, 5).map((r, i) => (
+                    <p key={`${r.nome}-${i}`} className="text-sm text-muted-foreground">
+                      <span className="text-foreground">{r.nome}</span>{" "}
+                      <span className="text-xs">({r.nicho || "nicho n/d"})</span>
+                    </p>
+                  ))}
+                </div>
+              )}
+          </>
+        )}
+        <a
+          href="https://clodoaldo.vercel.app/admin"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs underline underline-offset-2 hover:text-foreground"
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          Abrir admin completo do Media-Kit
+        </a>
+      </CardContent>
+    </Card>
   );
 }
