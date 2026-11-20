@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  // output "standalone" removido: na Vercel o roteamento de funcoes exige
+  // o output padrao do Next.js (o standalone destina-se a self-hosting).
   typescript: {
     ignoreBuildErrors: true,
   },
